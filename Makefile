@@ -7,7 +7,7 @@ size:
 	du -bh ./target/wasm32-unknown-unknown/release/raycaster.wasm
 
 run: all
-	w4 run-native target/wasm32-unknown-unknown/release/raycaster.wasm
+	w4 run-native raycaster.wasm
 
 run-web: all
 	w4 run --no-qr --no-open raycaster.wasm

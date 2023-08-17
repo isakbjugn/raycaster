@@ -29,12 +29,16 @@ const FOV: f32 = PI / 2.7; // Spelarens synsfelt
 const HALF_FOV: f32 = FOV * 0.5; // Halve spelarens synsfelt
 const ANGLE_STEP: f32 = FOV / (SCREEN_SIZE as f32); // Vinkelen mellom kvar stråle
 const WALL_HEIGHT: f32 = 100.0; // Eit magisk tal?
+const MAP_HEIGHT: usize = 8;
+const MAP_WIDTH: usize = 16;
 
 // WASM-4 hjelpe-funksjonar
-fn colors(colors: u16) {
-    unsafe {
-        *DRAW_COLORS = colors;
-    }
+fn set_colors(colors: u16) {
+    unsafe { *DRAW_COLORS = colors; }
+}
+
+fn get_colors() -> u16 {
+    unsafe { *DRAW_COLORS }
 }
 
 fn text(text: &str, x: i32, y: i32) {
@@ -47,6 +51,30 @@ extern "C" {
     fn rect(x: i32, y: i32, width: u32, height: u32);
     #[link_name = "textUtf8"]
     fn extern_text(text: *const u8, length: usize, x: i32, y: i32);
+}
+
+fn extract_colors() -> (u16, u16) {
+    let colors = get_colors();
+    // Extract the first digit (6) and create the first u16 value (0x11)
+    let primary_digit = (colors >> 4) & 0x0F;
+    let primary = (primary_digit << 4) | primary_digit;
+
+    // Extract the second digit (5) and create the second u16 value (0x44)
+    let secondary_digit = colors & 0x0F;
+    let secondary = (secondary_digit << 4) | secondary_digit;
+    (primary, secondary)
+}
+
+fn dashed_vline(x: i32, y: i32, len: u32) {
+    let (primary, secondary) = extract_colors();
+    set_colors(primary);
+    for b in (y..y + len as i32).step_by(2) {
+        unsafe { vline(x, b, 1) }
+    }
+    set_colors(secondary);
+    for b in (y + 1..y + 1 + len as i32).step_by(2) {
+        unsafe { vline(x, b, 1) }
+    }
 }
 
 #[panic_handler]
@@ -74,59 +102,70 @@ unsafe fn update() {
     );
 
     // draw the ground and sky
-    colors(0x44);
+    set_colors(0x44);
     rect(0, 0, SCREEN_SIZE, SCREEN_SIZE / 2);
-    colors(0x33);
+    set_colors(0x33);
     rect(0, (SCREEN_SIZE / 2) as i32, SCREEN_SIZE, SCREEN_SIZE / 2);
-    colors(0x41);
+    set_colors(0x41);
     text("Finn vegen ut!", 25, 10);
     let mut buffer = ryu::Buffer::new();
     text(buffer.format(STATE.player_z), 30, 25);
 
     // Gå gjennom kvar kolonne på skjermen og teikn ein vegg ut frå sentrum
     for (x, wall) in STATE.get_view().iter().enumerate() {
-        let (height, shadow) = wall;
+        let (height, terrain) = wall;
         let scaling_factor = *height as f32 / SCREEN_SIZE as f32;
         let wall_top = 80 - (height / 2) + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
 
-        if *shadow {
-            colors(0x11);
-        } else {
-            colors(0x22);
+        match terrain {
+            Terrain::VerticalWall => {
+                set_colors(0x11);
+                vline(x as i32, wall_top, *height as u32);
+            },
+            Terrain::HorizontalWall => {
+                set_colors(0x22);
+                vline(x as i32, wall_top, *height as u32);
+            },
+            Terrain::Doorway => {
+                set_colors(0x24);
+                dashed_vline(x as i32, wall_top, *height as u32);
+            },
+            _ => panic!()
         }
 
-        vline(x as i32, wall_top, *height as u32);
+
     }
 }
 
-const MAP: [u16; 8] = [
-    0b1111111111111111,
-    0b1000001010000101,
-    0b1011100000110101,
-    0b1000111010010001,
-    0b1010001011110111,
-    0b1011101001100001,
-    0b1000100000001101,
-    0b1111111111111111,
+const MAP: [u8; MAP_HEIGHT * MAP_WIDTH] = [
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 2,
+    1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1,
+    1, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1,
+    1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1,
+    1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
 
-/// Sjekk om det finst ein vegg på eit punkt på kartet
-fn point_in_wall(x: f32, y: f32) -> bool {
-    match MAP.get(y as usize) {
-        Some(line) => (line & (0b1 << x as usize)) != 0,
-        None => true,
+#[derive(Clone, Copy, PartialEq)]
+enum Terrain {
+    Wall,
+    HorizontalWall,
+    VerticalWall,
+    CornerWall,
+    Doorway,
+    Open,
+}
+
+/// Sjekk ka som finst eit punkt på kartet
+fn read_map(x: f32, y: f32) -> Terrain {
+    match MAP.get((y as i32 * MAP_WIDTH as i32 + x as i32) as usize) {
+        Some(&square) if square == 0 => Terrain::Open,
+        Some(&square) if square == 1 => Terrain::Wall,
+        Some(&square) if square == 2 => Terrain::Doorway,
+        _ => Terrain::Wall,
     }
-}
-
-enum Wall {
-    Horizontal,
-    Vertical,
-}
-
-fn met_wall(new_position: (f32, f32), previous_position: (f32, f32)) -> Option<Wall> {
-    if point_in_wall(new_position.0, previous_position.1) { Some(Wall::Horizontal) }
-    else if point_in_wall(previous_position.0, new_position.1) { Some(Wall::Vertical) }
-    else { None }
 }
 
 fn distance(a: f32, b: f32) -> f32 {
@@ -149,7 +188,7 @@ static mut STATE: State = State {
     player_z: 0.0,
     player_velocity: 0.0,
     player_z_velocity: 0.0,
-    player_angle: 0.0,
+    player_angle: -PI / 2_f32,
     player_angular_velocity: 0.0,
 };
 
@@ -168,16 +207,15 @@ impl State {
         self.player_y += -sinf(self.player_angle) * self.player_velocity;
         self.player_angle += self.player_angular_velocity;
 
-        match met_wall((self.player_x, self.player_y), previous_position) {
-            Some(Wall::Horizontal) => {
+        if read_map(self.player_x, self.player_y) == Terrain::Wall {
+            if read_map(self.player_x, previous_position.1) == Terrain::Open {
+                self.player_y = previous_position.1;
+            } else if read_map(previous_position.0, self.player_y) == Terrain::Open {
                 self.player_x = previous_position.0;
-                self.player_y = self.player_y - (self.player_y - previous_position.1) / 2_f32;
-            }
-            Some(Wall::Vertical) => {
-                self.player_x = self.player_x - (self.player_x - previous_position.0) / 2_f32;
+            } else {
+                self.player_x = previous_position.0;
                 self.player_y = previous_position.1;
             }
-            None => {},
         }
 
         if jump && self.player_z == 0.0 {
@@ -198,7 +236,7 @@ impl State {
     }
 
     /// Gjev tilbake næraste vegg som ei stråle skjer langsetter ei horisontal linje
-    fn horizontal_intersection(&self, angle: f32) -> f32 {
+    fn horizontal_intersection(&self, angle: f32) -> (f32, Terrain) {
         // Seier om vinkelen peikar nordover (i det heile)
         let up = fabsf(floorf(angle / PI) % 2.0) != 0.0;
 
@@ -217,6 +255,7 @@ impl State {
         // next_x og next_y held styr på kor langt strålen er frå spelaren
         let mut next_x = first_x;
         let mut next_y = first_y;
+        let mut terrain = Terrain::Open;
 
         // Lykkje kor strålen forlengast til han når ein vegg
         for _ in 0..256 {
@@ -229,7 +268,11 @@ impl State {
             };
 
             // Lykkja stoggar når strålen kjem til ein vegg
-            if point_in_wall(current_x, current_y) {
+            terrain = read_map(current_x, current_y);
+            if terrain != Terrain::Open {
+                if terrain == Terrain::Wall {
+                    terrain = Terrain::HorizontalWall
+                }
                 break;
             }
 
@@ -239,11 +282,11 @@ impl State {
         }
 
         // gje tilbake avstanden fra (next_x, next_y) til spelarens posisjon
-        distance(next_x, next_y)
+        (distance(next_x, next_y), terrain)
     }
 
     /// Gjev tilbake næraste vegg som ei stråle skjer langsetter ei vertikal linje
-    fn vertical_intersection(&self, angle: f32) -> f32 {
+    fn vertical_intersection(&self, angle: f32) -> (f32, Terrain) {
         // Seier om vinkelen peikar nordover (i det heile)
         let right = fabsf(floorf((angle - FRAC_PI_2) / PI) % 2.0) != 0.0;
 
@@ -262,6 +305,7 @@ impl State {
         // next_x og next_y held styr på kor langt strålen er frå spelaren
         let mut next_x = first_x;
         let mut next_y = first_y;
+        let mut terrain = Terrain::Open;
 
         // Lykkje kor strålen forlengast til han når ein vegg
         for _ in 0..256 {
@@ -274,7 +318,11 @@ impl State {
             let current_y = next_y + self.player_y;
 
             // Lykkja stoggar når strålen kjem til ein vegg
-            if point_in_wall(current_x, current_y) {
+            terrain = read_map(current_x, current_y);
+            if terrain != Terrain::Open {
+                if terrain == Terrain::Wall {
+                    terrain = Terrain::VerticalWall;
+                }
                 break;
             }
 
@@ -284,34 +332,34 @@ impl State {
         }
 
         // gje tilbake avstanden fra (next_x, next_y) til spelarens posisjon
-        distance(next_x, next_y)
+        (distance(next_x, next_y), terrain)
     }
 
     /// Gjev 160 vegghøgder og deira farge frå spelarens perspektiv
-    pub fn get_view(&self) -> [(i32, bool); SCREEN_SIZE as usize] {
+    pub fn get_view(&self) -> [(i32, Terrain); SCREEN_SIZE as usize] {
         // Start ved enden av spelarens synsfelt
         let starting_angle = self.player_angle + HALF_FOV;
 
-        let mut walls = [(0, false); SCREEN_SIZE as usize];
+        let mut walls = [(0, Terrain::Open); SCREEN_SIZE as usize];
 
         for (idx, wall) in walls.iter_mut().enumerate() {
             // idx er veggens indeks, wall er ein muterbar referanse til wall-vektoren
             let angle = starting_angle - idx as f32 * ANGLE_STEP;
 
             // Hentar næraste skjering i horisontal og vertikal retning
-            let h_dist = self.horizontal_intersection(angle);
-            let v_dist = self.vertical_intersection(angle);
+            let (h_distance, h_terrain) = self.horizontal_intersection(angle);
+            let (v_distance, v_terrain) = self.vertical_intersection(angle);
 
-            let (min_dist, shadow) = if h_dist < v_dist {
-                (h_dist, false)
+            let (min_distance, terrain) = if h_distance < v_distance {
+                (h_distance, h_terrain)
             } else {
-                (v_dist, true)
+                (v_distance, v_terrain)
             };
 
             // Vel minste avstand og konverterer til vegg-høgde
             *wall = (
-                (WALL_HEIGHT / (min_dist * cosf(angle - self.player_angle)) ) as i32,
-                shadow,
+                (WALL_HEIGHT / (min_distance * cosf(angle - self.player_angle)) ) as i32,
+                terrain,
             );
         }
 
