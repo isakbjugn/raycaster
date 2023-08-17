@@ -4,6 +4,11 @@ use core::{arch::wasm32, panic::PanicInfo};
 use core::f32::consts::{FRAC_PI_2, PI};
 use libm::{ceilf, cosf, fabsf, floorf, sinf, sqrtf, tanf};
 
+// External WASM-4 Constants
+const SCREEN_SIZE: u32 = 160;
+
+static mut PALETTE: *mut [u32; 4] = 0x04 as *mut [u32; 4];
+
 const GAMEPAD1: *const u8 = 0x16 as *const u8;
 const DRAW_COLORS: *mut u16 = 0x14 as *mut u16;
 
@@ -16,12 +21,13 @@ const STEP_SIZE: f32 = 0.045;
 
 const FOV: f32 = PI / 2.7; // Spelarens synsfelt
 const HALF_FOV: f32 = FOV * 0.5; // Halve spelarens synsfelt
-const ANGLE_STEP: f32 = FOV / 160.0; // Vinkelen mellom kvar stråle
+const ANGLE_STEP: f32 = FOV / (SCREEN_SIZE as f32); // Vinkelen mellom kvar stråle
 const WALL_HEIGHT: f32 = 100.0; // Eit magisk tal?
 
 
 extern "C" {
     fn vline(x: i32, y: i32, len: u32);
+    fn rect(x: i32, y: i32, width: u32, height: u32);
 }
 
 #[panic_handler]
@@ -29,6 +35,15 @@ fn phandler(_: &PanicInfo<'_>) -> ! {
     wasm32::unreachable();
 }
 
+// Køyrer ved oppstart
+#[no_mangle]
+fn start() {
+    unsafe {
+        *PALETTE = [0x2B2D24, 0x606751, 0x949C81, 0x3E74BC];
+    }
+}
+
+// Køyrer for kvart bilete
 #[no_mangle]
 unsafe fn update() {
     STATE.update(
@@ -38,14 +53,20 @@ unsafe fn update() {
         *GAMEPAD1 & BUTTON_RIGHT != 0,
     );
 
+    // draw the ground and sky
+    *DRAW_COLORS = 0x44;
+    rect(0, 0, SCREEN_SIZE, SCREEN_SIZE / 2);
+    *DRAW_COLORS = 0x33;
+    rect(0, (SCREEN_SIZE / 2) as i32, SCREEN_SIZE, SCREEN_SIZE / 2);
+
     // Gå gjennom kvar colonne på skjermen og teikn ein vegg ut frå sentrum
     for (x, wall) in STATE.get_view().iter().enumerate() {
         let (height, shadow) = wall;
 
         if *shadow {
-            *DRAW_COLORS = 0x02;
+            *DRAW_COLORS = 0x11;
         } else {
-            *DRAW_COLORS = 0x03;
+            *DRAW_COLORS = 0x22;
         }
 
         vline(x as i32, 80 - (height / 2), *height as u32);
@@ -207,11 +228,11 @@ impl State {
     }
 
     /// Gjev 160 vegghøgder og deira farge frå spelarens perspektiv
-    pub fn get_view(&self) -> [(i32, bool); 160] {
+    pub fn get_view(&self) -> [(i32, bool); SCREEN_SIZE as usize] {
         // Start ved enden av spelarens synsfelt
         let starting_angle = self.player_angle + HALF_FOV;
 
-        let mut walls = [(0, false); 160];
+        let mut walls = [(0, false); SCREEN_SIZE as usize];
 
         for (idx, wall) in walls.iter_mut().enumerate() {
             // idx er veggens indeks, wall er ein muerbar referanse til wall-vektoren
@@ -229,7 +250,7 @@ impl State {
 
             // Vel minste avstand og konverterer til vegg-høgde
             *wall = (
-                (WALL_HEIGHT / (f32::min(h_dist, v_dist) * cosf(angle - self.player_angle)) ) as i32,
+                (WALL_HEIGHT / (min_dist * cosf(angle - self.player_angle)) ) as i32,
                 shadow,
             );
         }
