@@ -6,6 +6,8 @@ use libm::{ceilf, cosf, fabsf, floorf, sinf, sqrtf, tanf};
 
 // External WASM-4 Constants
 const SCREEN_SIZE: u32 = 160;
+const FRAME_RATE: u32 = 60;
+const FRAME_WIDTH: f32 = 1_f32 / FRAME_RATE as f32;
 
 static mut PALETTE: *mut [u32; 4] = 0x04 as *mut [u32; 4];
 
@@ -16,18 +18,35 @@ const BUTTON_LEFT: u8 = 16;  // 00010000
 const BUTTON_RIGHT: u8 = 32; // 00100000
 const BUTTON_UP: u8 = 64;    // 01000000
 const BUTTON_DOWN: u8 = 128; // 10000000
+const BUTTON_SPACE: u8 = 1; // 00000001
+const BUTTON_Z: u8 = 2; // 00000010
 
 const STEP_SIZE: f32 = 0.045;
+const GRAVITATIONAL_ACCELERATION: f32 = 6.0;
+const INITIAL_JUMP_SPEED: f32 = 3.0;
 
 const FOV: f32 = PI / 2.7; // Spelarens synsfelt
 const HALF_FOV: f32 = FOV * 0.5; // Halve spelarens synsfelt
 const ANGLE_STEP: f32 = FOV / (SCREEN_SIZE as f32); // Vinkelen mellom kvar stråle
 const WALL_HEIGHT: f32 = 100.0; // Eit magisk tal?
 
+// WASM-4 hjelpe-funksjonar
+fn colors(colors: u16) {
+    unsafe {
+        *DRAW_COLORS = colors;
+    }
+}
 
+fn text(text: &str, x: i32, y: i32) {
+    unsafe { extern_text(text.as_ptr(), text.len(), x, y) }
+}
+
+// extern functions linking to the wasm runtime
 extern "C" {
     fn vline(x: i32, y: i32, len: u32);
     fn rect(x: i32, y: i32, width: u32, height: u32);
+    #[link_name = "textUtf8"]
+    fn extern_text(text: *const u8, length: usize, x: i32, y: i32);
 }
 
 #[panic_handler]
@@ -51,25 +70,32 @@ unsafe fn update() {
         *GAMEPAD1 & BUTTON_DOWN != 0,
         *GAMEPAD1 & BUTTON_LEFT != 0,
         *GAMEPAD1 & BUTTON_RIGHT != 0,
+        *GAMEPAD1 & BUTTON_SPACE != 0,
     );
 
     // draw the ground and sky
-    *DRAW_COLORS = 0x44;
+    colors(0x44);
     rect(0, 0, SCREEN_SIZE, SCREEN_SIZE / 2);
-    *DRAW_COLORS = 0x33;
+    colors(0x33);
     rect(0, (SCREEN_SIZE / 2) as i32, SCREEN_SIZE, SCREEN_SIZE / 2);
+    colors(0x41);
+    text("Finn vegen ut!", 25, 10);
+    let mut buffer = ryu::Buffer::new();
+    text(buffer.format(STATE.player_z), 30, 25);
 
-    // Gå gjennom kvar colonne på skjermen og teikn ein vegg ut frå sentrum
+    // Gå gjennom kvar kolonne på skjermen og teikn ein vegg ut frå sentrum
     for (x, wall) in STATE.get_view().iter().enumerate() {
         let (height, shadow) = wall;
+        let scaling_factor = *height as f32 / SCREEN_SIZE as f32;
+        let wall_top = 80 - (height / 2) + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
 
         if *shadow {
-            *DRAW_COLORS = 0x11;
+            colors(0x11);
         } else {
-            *DRAW_COLORS = 0x22;
+            colors(0x22);
         }
 
-        vline(x as i32, 80 - (height / 2), *height as u32);
+        vline(x as i32, wall_top, *height as u32);
     }
 }
 
@@ -111,17 +137,21 @@ struct State {
     player_x: f32,
     player_y: f32,
     player_angle: f32,
+    player_z: f32,
+    player_z_velocity: f32,
 }
 
 static mut STATE: State = State {
     player_x: 1.5,
     player_y: 1.5,
     player_angle: 0.0,
+    player_z: 0.0,
+    player_z_velocity: 0.0,
 };
 
 impl State {
     /// Flytter spelaren
-    pub fn update(&mut self, up: bool, down: bool, left: bool, right: bool) {
+    pub fn update(&mut self, up: bool, down: bool, left: bool, right: bool, jump: bool) {
         // lagre noverandre posisjon i det høvet vi treng han seinare
         let previous_position = (self.player_x, self.player_y);
 
@@ -153,6 +183,17 @@ impl State {
                 self.player_y = previous_position.1;
             }
             None => {},
+        }
+
+        if jump && self.player_z == 0.0 {
+            self.player_z_velocity = INITIAL_JUMP_SPEED;
+        }
+
+        self.player_z += self.player_z_velocity * FRAME_WIDTH;
+        self.player_z_velocity -= GRAVITATIONAL_ACCELERATION * FRAME_WIDTH;
+        if self.player_z <= 0.0 {
+            self.player_z = 0.0;
+            self.player_z_velocity = 0.0;
         }
     }
 
