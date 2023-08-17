@@ -92,6 +92,17 @@ fn point_in_wall(x: f32, y: f32) -> bool {
     }
 }
 
+enum Wall {
+    Horizontal,
+    Vertical,
+}
+
+fn met_wall(new_position: (f32, f32), previous_position: (f32, f32)) -> Option<Wall> {
+    if point_in_wall(new_position.0, previous_position.1) { Some(Wall::Horizontal) }
+    else if point_in_wall(previous_position.0, new_position.1) { Some(Wall::Vertical) }
+    else { None }
+}
+
 fn distance(a: f32, b: f32) -> f32 {
     sqrtf((a * a) + (b * b))
 }
@@ -132,8 +143,16 @@ impl State {
             self.player_angle += STEP_SIZE;
         }
 
-        if point_in_wall(self.player_x, self.player_y) {
-            (self.player_x, self.player_y) = previous_position;
+        match met_wall((self.player_x, self.player_y), previous_position) {
+            Some(Wall::Horizontal) => {
+                self.player_x = previous_position.0;
+                self.player_y = self.player_y - (self.player_y - previous_position.1) / 2_f32;
+            }
+            Some(Wall::Vertical) => {
+                self.player_x = self.player_x - (self.player_x - previous_position.0) / 2_f32;
+                self.player_y = previous_position.1;
+            }
+            None => {},
         }
     }
 
@@ -235,10 +254,10 @@ impl State {
         let mut walls = [(0, false); SCREEN_SIZE as usize];
 
         for (idx, wall) in walls.iter_mut().enumerate() {
-            // idx er veggens indeks, wall er ein muerbar referanse til wall-vektoren
+            // idx er veggens indeks, wall er ein muterbar referanse til wall-vektoren
             let angle = starting_angle - idx as f32 * ANGLE_STEP;
 
-            // Henter næraste skjering i horisontal og vertikal retning
+            // Hentar næraste skjering i horisontal og vertikal retning
             let h_dist = self.horizontal_intersection(angle);
             let v_dist = self.vertical_intersection(angle);
 
