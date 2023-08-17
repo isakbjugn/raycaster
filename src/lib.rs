@@ -19,7 +19,7 @@ const BUTTON_RIGHT: u8 = 32; // 00100000
 const BUTTON_UP: u8 = 64;    // 01000000
 const BUTTON_DOWN: u8 = 128; // 10000000
 const BUTTON_SPACE: u8 = 1; // 00000001
-const BUTTON_Z: u8 = 2; // 00000010
+const _BUTTON_Z: u8 = 2; // 00000010
 
 const STEP_SIZE: f32 = 0.045;
 const GRAVITATIONAL_ACCELERATION: f32 = 6.0;
@@ -136,17 +136,21 @@ fn distance(a: f32, b: f32) -> f32 {
 struct State {
     player_x: f32,
     player_y: f32,
-    player_angle: f32,
     player_z: f32,
+    player_velocity: f32,
     player_z_velocity: f32,
+    player_angle: f32,
+    player_angular_velocity: f32,
 }
 
 static mut STATE: State = State {
     player_x: 1.5,
     player_y: 1.5,
-    player_angle: 0.0,
     player_z: 0.0,
+    player_velocity: 0.0,
     player_z_velocity: 0.0,
+    player_angle: 0.0,
+    player_angular_velocity: 0.0,
 };
 
 impl State {
@@ -155,23 +159,14 @@ impl State {
         // lagre noverandre posisjon i det høvet vi treng han seinare
         let previous_position = (self.player_x, self.player_y);
 
-        if up {
-            self.player_x += cosf(self.player_angle) * STEP_SIZE;
-            self.player_y += -sinf(self.player_angle) * STEP_SIZE;
+        if self.player_z == 0.0 && !jump {
+            self.player_velocity = STEP_SIZE * up as i32 as f32 - STEP_SIZE * down as i32 as f32;
+            self.player_angular_velocity = STEP_SIZE * left as i32 as f32 - STEP_SIZE * right as i32 as f32;
         }
 
-        if down {
-            self.player_x -= cosf(self.player_angle) * STEP_SIZE;
-            self.player_y -= -sinf(self.player_angle) * STEP_SIZE;
-        }
-
-        if right {
-            self.player_angle -= STEP_SIZE;
-        }
-
-        if left {
-            self.player_angle += STEP_SIZE;
-        }
+        self.player_x += cosf(self.player_angle) * self.player_velocity;
+        self.player_y += -sinf(self.player_angle) * self.player_velocity;
+        self.player_angle += self.player_angular_velocity;
 
         match met_wall((self.player_x, self.player_y), previous_position) {
             Some(Wall::Horizontal) => {
@@ -187,6 +182,11 @@ impl State {
 
         if jump && self.player_z == 0.0 {
             self.player_z_velocity = INITIAL_JUMP_SPEED;
+        }
+
+        if self.player_z > 0.0 {
+            self.player_velocity *= 0.975;
+            self.player_angular_velocity *= 0.975;
         }
 
         self.player_z += self.player_z_velocity * FRAME_WIDTH;
