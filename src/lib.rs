@@ -68,11 +68,11 @@ fn extract_colors() -> (u16, u16) {
 fn dashed_vline(x: i32, y: i32, len: u32) {
     let (primary, secondary) = extract_colors();
     set_colors(primary);
-    for b in (y..y + len as i32).step_by(2) {
+    for b in (y..y + (1 - (x % 2)) + len as i32).step_by(2) {
         unsafe { vline(x, b, 1) }
     }
     set_colors(secondary);
-    for b in (y + 1..y + 1 + len as i32).step_by(2) {
+    for b in (y + 1..y + (x % 2) + len as i32).step_by(2) {
         unsafe { vline(x, b, 1) }
     }
 }
@@ -113,27 +113,24 @@ unsafe fn update() {
 
     // Gå gjennom kvar kolonne på skjermen og teikn ein vegg ut frå sentrum
     for (x, wall) in STATE.get_view().iter().enumerate() {
-        let (height, terrain) = wall;
+        let (height, terrain, orientation) = wall;
         let scaling_factor = *height as f32 / SCREEN_SIZE as f32;
         let wall_top = 80 - (height / 2) + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
 
         match terrain {
-            Terrain::VerticalWall => {
-                set_colors(0x11);
-                vline(x as i32, wall_top, *height as u32);
-            },
-            Terrain::HorizontalWall => {
-                set_colors(0x22);
+            Terrain::Wall => {
+                match orientation {
+                    Orientation::Vertical => { set_colors(0x11); },
+                    Orientation::Horizontal => { set_colors(0x22); },
+                }
                 vline(x as i32, wall_top, *height as u32);
             },
             Terrain::Doorway => {
                 set_colors(0x24);
                 dashed_vline(x as i32, wall_top, *height as u32);
             },
-            _ => panic!()
+            Terrain::Open => panic!("Wall should never have Terrain::Open")
         }
-
-
     }
 }
 
@@ -150,12 +147,15 @@ const MAP: [u8; MAP_HEIGHT * MAP_WIDTH] = [
 
 #[derive(Clone, Copy, PartialEq)]
 enum Terrain {
-    Wall,
-    HorizontalWall,
-    VerticalWall,
-    CornerWall,
-    Doorway,
     Open,
+    Wall,
+    Doorway,
+}
+
+#[derive(Clone, Copy)]
+enum Orientation {
+    Horizontal,
+    Vertical,
 }
 
 /// Sjekk ka som finst eit punkt på kartet
@@ -270,9 +270,6 @@ impl State {
             // Lykkja stoggar når strålen kjem til ein vegg
             terrain = read_map(current_x, current_y);
             if terrain != Terrain::Open {
-                if terrain == Terrain::Wall {
-                    terrain = Terrain::HorizontalWall
-                }
                 break;
             }
 
@@ -320,9 +317,6 @@ impl State {
             // Lykkja stoggar når strålen kjem til ein vegg
             terrain = read_map(current_x, current_y);
             if terrain != Terrain::Open {
-                if terrain == Terrain::Wall {
-                    terrain = Terrain::VerticalWall;
-                }
                 break;
             }
 
@@ -336,11 +330,11 @@ impl State {
     }
 
     /// Gjev 160 vegghøgder og deira farge frå spelarens perspektiv
-    pub fn get_view(&self) -> [(i32, Terrain); SCREEN_SIZE as usize] {
+    pub fn get_view(&self) -> [(i32, Terrain, Orientation); SCREEN_SIZE as usize] {
         // Start ved enden av spelarens synsfelt
         let starting_angle = self.player_angle + HALF_FOV;
 
-        let mut walls = [(0, Terrain::Open); SCREEN_SIZE as usize];
+        let mut walls = [(0, Terrain::Open, Orientation::Horizontal); SCREEN_SIZE as usize];
 
         for (idx, wall) in walls.iter_mut().enumerate() {
             // idx er veggens indeks, wall er ein muterbar referanse til wall-vektoren
@@ -350,16 +344,17 @@ impl State {
             let (h_distance, h_terrain) = self.horizontal_intersection(angle);
             let (v_distance, v_terrain) = self.vertical_intersection(angle);
 
-            let (min_distance, terrain) = if h_distance < v_distance {
-                (h_distance, h_terrain)
+            let (min_distance, terrain, orientation) = if h_distance < v_distance {
+                (h_distance, h_terrain, Orientation::Horizontal)
             } else {
-                (v_distance, v_terrain)
+                (v_distance, v_terrain, Orientation::Vertical)
             };
 
             // Vel minste avstand og konverterer til vegg-høgde
             *wall = (
                 (WALL_HEIGHT / (min_distance * cosf(angle - self.player_angle)) ) as i32,
                 terrain,
+                orientation,
             );
         }
 
