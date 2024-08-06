@@ -9,6 +9,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [profile.release]
+debug = true
 opt-level = "z"
 lto = true
 codegen-units = 1
@@ -16,5 +17,6 @@ strip = true
 panic = "abort"
 
 [dependencies]
+console_error_panic_hook = "0.1.7"
 libm = "0.2"
 ryu = "1.0.15"
