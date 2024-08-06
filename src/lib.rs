@@ -122,12 +122,37 @@ unsafe fn update() {
 
     // let mut buffer = ryu::Buffer::new();
     // text(buffer.format(STATE.player_z), 30, 25);
+    for (x, terrains) in STATE.get_terrains().iter().enumerate() {
+        for direction in terrains.iter().filter(|terrain| terrain.1 != Terrain::Wall) {
+            let (height, terrain) = direction;
+            let scaling_factor = *height as f32 / SCREEN_SIZE as f32;
+            let wall_top = 80 - (height / 2) + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
+            let horison = 80 + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
+
+            match terrain {
+                Terrain::Wall => {
+                    vline(x as i32, wall_top, *height as u32);
+                },
+                Terrain::Doorway => {
+                    set_colors(0x24);
+                    dashed_vline(x as i32, wall_top, *height as u32);
+                },
+                Terrain::Mirage => {
+                    set_colors(0x24);
+                    dashed_vline(x as i32, wall_top, *height as u32);
+                },
+                Terrain::Freeze => panic!("Terrain::Freeze is not an obstacle!"),
+                Terrain::Open => panic!("Wall should never have Terrain::Open"),
+            }
+        }
+    }
 
     // Gå gjennom kvar kolonne på skjermen og teikn ein vegg ut frå sentrum
     for (x, wall) in STATE.get_view().iter().enumerate() {
         let (height, terrain, orientation) = wall;
         let scaling_factor = *height as f32 / SCREEN_SIZE as f32;
         let wall_top = 80 - (height / 2) + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
+        let horison = 80 + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
 
         match terrain {
             Terrain::Wall => {
@@ -145,6 +170,7 @@ unsafe fn update() {
                 set_colors(0x24);
                 dashed_vline(x as i32, wall_top, *height as u32);
             },
+            Terrain::Freeze => panic!("Terrain::Freeze is not an obstacle!"),
             Terrain::Open => panic!("Wall should never have Terrain::Open"),
         }
     }

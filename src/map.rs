@@ -1,9 +1,9 @@
-const MAP_HEIGHT: usize = 8;
-const MAP_WIDTH: usize = 21;
+pub const MAP_HEIGHT: usize = 8;
+pub const MAP_WIDTH: usize = 21;
 
 pub const MAP: [u8; MAP_HEIGHT * MAP_WIDTH] = [
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 2,
+    1, 0, 0, 3, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 2,
     1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1,
     1, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1,
     1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1,
@@ -17,6 +17,7 @@ pub enum Terrain {
     Open,
     Wall,
     Doorway,
+    Freeze,
     Mirage,
 }
 
@@ -32,6 +33,7 @@ pub fn read_map(x: f32, y: f32) -> Terrain {
         Some(&square) if square == 0 => Terrain::Open,
         Some(&square) if square == 1 => Terrain::Wall,
         Some(&square) if square == 2 => Terrain::Doorway,
+        Some(&square) if square == 3 => Terrain::Freeze,
         Some(&square) if square == 4 => Terrain::Mirage,
         _ => Terrain::Wall,
     }
