@@ -1,7 +1,7 @@
 use libm::{ceilf, cosf, fabsf, floorf, sinf, sqrtf, tanf};
 use core::f32::consts::{FRAC_PI_2, PI};
 use crate::constants::{FRAME_WIDTH, SCREEN_SIZE};
-use crate::map::{Orientation, read_map, Terrain};
+use crate::map::{MAP_HEIGHT, MAP_WIDTH, Orientation, read_map, Terrain};
 
 const STEP_SIZE: f32 = 0.045;
 const GRAVITATIONAL_ACCELERATION: f32 = 6.0;
@@ -11,10 +11,11 @@ const FOV: f32 = PI / 2.7; // Spelarens synsfelt
 const HALF_FOV: f32 = FOV * 0.5; // Halve spelarens synsfelt
 const ANGLE_STEP: f32 = FOV / (SCREEN_SIZE as f32); // Vinkelen mellom kvar stråle
 const WALL_HEIGHT: f32 = 100.0; // Eit magisk tal?
+const FLOOR_HEIGHT: f32 = 50.0;
 
 pub enum View {
     FirstPerson,
-    Finished,
+    Victory,
 }
 
 pub struct State {
@@ -47,6 +48,12 @@ impl State {
         self.player_y += -sinf(self.player_angle) * self.player_velocity;
         self.player_angle += self.player_angular_velocity;
 
+        if read_map(previous_position.0, previous_position.1) == Terrain::Freeze &&
+            read_map(self.player_x, self.player_y) != Terrain::Freeze {
+            self.player_x = previous_position.0;
+            self.player_y = previous_position.1;
+        }
+
         match read_map(self.player_x, self.player_y) {
             Terrain::Open => {},
             Terrain::Wall => {
@@ -59,7 +66,13 @@ impl State {
                     self.player_y = previous_position.1;
                 }
             },
-            Terrain::Doorway => self.view = View::Finished,
+            Terrain::Freeze => {},
+            Terrain::Doorway => {
+                self.view = View::Victory;
+                self.player_x = previous_position.0;
+                self.player_y = previous_position.1;
+            },
+            Terrain::Mirage => {},
         }
 
         if jump && self.player_z == 0.0 {
@@ -79,8 +92,8 @@ impl State {
         }
     }
 
-    /// Gjev tilbake næraste vegg som ei stråle skjer langsetter ei horisontal linje
-    fn horizontal_intersection(&self, angle: f32) -> (f32, Terrain) {
+    /// Gjev alle terreng til og med første horisontale vegg som ein stråle skjer
+    fn horizontal_intersections(&self, angle: f32) -> [(f32, Terrain); MAP_HEIGHT] {
         // Seier om vinkelen peikar nordover (i det heile)
         let up = fabsf(floorf(angle / PI) % 2.0) != 0.0;
 
@@ -99,10 +112,11 @@ impl State {
         // next_x og next_y held styr på kor langt strålen er frå spelaren
         let mut next_x = first_x;
         let mut next_y = first_y;
-        let mut terrain = Terrain::Open;
+
+        let mut intersections = [(100.0, Terrain::Open); MAP_HEIGHT];
 
         // Lykkje kor strålen forlengast til han når ein vegg
-        for _ in 0..256 {
+        for grid_line in intersections.iter_mut() {
             // current_x og current_y er strålens noverande posisjon
             let current_x = next_x + self.player_x;
             let current_y = if up {
@@ -112,9 +126,11 @@ impl State {
             };
 
             // Lykkja stoggar når strålen kjem til ein vegg
-            terrain = read_map(current_x, current_y);
-            if terrain != Terrain::Open {
-                break;
+            *grid_line = (distance(next_x, next_y), read_map(current_x, current_y));
+
+            if grid_line.1 != Terrain::Open {
+                //intersections[MAP_HEIGHT - 1] = (1.0, Terrain::Wall); // avlusing
+                return intersections;
             }
 
             // forleng strålen så lenge me ikkje har nådd ein vegg
@@ -122,12 +138,14 @@ impl State {
             next_y += dy;
         }
 
+        intersections[MAP_HEIGHT - 1] = (intersections[MAP_HEIGHT - 1].0, Terrain::Wall);
+
         // gje tilbake avstanden fra (next_x, next_y) til spelarens posisjon
-        (distance(next_x, next_y), terrain)
+        intersections
     }
 
-    /// Gjev tilbake næraste vegg som ei stråle skjer langsetter ei vertikal linje
-    fn vertical_intersection(&self, angle: f32) -> (f32, Terrain) {
+    /// Gjev alle terreng til og med første vertikale vegg som ein stråle skjer
+    fn vertical_intersections(&self, angle: f32) -> [(f32, Terrain); MAP_WIDTH] {
         // Seier om vinkelen peikar nordover (i det heile)
         let right = fabsf(floorf((angle - FRAC_PI_2) / PI) % 2.0) != 0.0;
 
@@ -146,10 +164,12 @@ impl State {
         // next_x og next_y held styr på kor langt strålen er frå spelaren
         let mut next_x = first_x;
         let mut next_y = first_y;
-        let mut terrain = Terrain::Open;
+
+        let mut intersections = [(100.0, Terrain::Open); MAP_WIDTH];
+        //intersections[MAP_HEIGHT - 1] = (100.0, Terrain::Wall);
 
         // Lykkje kor strålen forlengast til han når ein vegg
-        for _ in 0..256 {
+        for grid_line in intersections.iter_mut() {
             // current_x og current_y er strålens noverande posisjon
             let current_x = if right {
                 next_x + self.player_x
@@ -159,9 +179,11 @@ impl State {
             let current_y = next_y + self.player_y;
 
             // Lykkja stoggar når strålen kjem til ein vegg
-            terrain = read_map(current_x, current_y);
-            if terrain != Terrain::Open {
-                break;
+            *grid_line = (distance(next_x, next_y), read_map(current_x, current_y));
+
+            if grid_line.1 != Terrain::Open {
+                //intersections[MAP_WIDTH - 1] = (1.0, Terrain::Wall); // avlusing
+                return intersections;
             }
 
             // forleng strålen så lenge me ikkje har nådd ein vegg
@@ -169,24 +191,60 @@ impl State {
             next_y += dy;
         }
 
+        intersections[MAP_WIDTH - 1] = (intersections[MAP_WIDTH - 1].0, Terrain::Wall);
+
         // gje tilbake avstanden fra (next_x, next_y) til spelarens posisjon
-        (distance(next_x, next_y), terrain)
+        intersections
     }
 
-    /// Gjev 160 vegghøgder og deira farge frå spelarens perspektiv
+    pub fn get_terrains(&self) -> [[(i32, Terrain); MAP_WIDTH]; SCREEN_SIZE as usize] {
+        // Start ved enden av spelarens synsfelt
+        let starting_angle = self.player_angle + HALF_FOV;
+
+        let mut terrains = [[(0, Terrain::Open); MAP_WIDTH]; SCREEN_SIZE as usize];
+
+        for (idx, direction) in terrains.iter_mut().enumerate() {
+            // idx er veggens indeks, wall er ein muterbar referanse til wall-vektoren
+            let angle = starting_angle - idx as f32 * ANGLE_STEP;
+            let h_intersections = self.horizontal_intersections(angle);
+            let v_intersections = self.vertical_intersections(angle);
+
+            if h_intersections.find_first_obstacle_or_wall().0 < v_intersections.find_first_obstacle_or_wall().0 {
+                for (cell, terrain) in h_intersections.iter().enumerate() {
+                    direction[cell] = (
+                        (FLOOR_HEIGHT / (terrain.0 * cosf(angle - self.player_angle)) ) as i32,
+                        terrain.1,
+                    );
+                }
+            } else {
+                for (cell, terrain) in v_intersections.iter().enumerate() {
+                    direction[cell] = (
+                        (FLOOR_HEIGHT / (terrain.0 * cosf(angle - self.player_angle)) ) as i32,
+                        terrain.1,
+                    );
+                }
+            }
+        }
+
+        terrains
+    }
+
     pub fn get_view(&self) -> [(i32, Terrain, Orientation); SCREEN_SIZE as usize] {
         // Start ved enden av spelarens synsfelt
         let starting_angle = self.player_angle + HALF_FOV;
 
-        let mut walls = [(0, Terrain::Open, Orientation::Horizontal); SCREEN_SIZE as usize];
+        let mut walls = [(0, Terrain::Wall, Orientation::Horizontal); SCREEN_SIZE as usize];
 
         for (idx, wall) in walls.iter_mut().enumerate() {
             // idx er veggens indeks, wall er ein muterbar referanse til wall-vektoren
             let angle = starting_angle - idx as f32 * ANGLE_STEP;
 
             // Hentar næraste skjering i horisontal og vertikal retning
-            let (h_distance, h_terrain) = self.horizontal_intersection(angle);
-            let (v_distance, v_terrain) = self.vertical_intersection(angle);
+            let (h_distance, h_terrain) = self.horizontal_intersections(angle)
+                .find_first_obstacle_or_wall();
+
+            let (v_distance, v_terrain) = self.vertical_intersections(angle)
+                .find_first_obstacle_or_wall();
 
             let (min_distance, terrain, orientation) = if h_distance < v_distance {
                 (h_distance, h_terrain, Orientation::Horizontal)
@@ -203,5 +261,24 @@ impl State {
         }
 
         walls
+    }
+}
+
+trait Rays {
+    fn find_first_obstacle_or_wall(&self) -> (f32, Terrain);
+}
+
+impl Rays for [(f32, Terrain)] {
+    fn find_first_obstacle_or_wall(&self) -> (f32, Terrain) {
+        for &tuple in self {
+            /*
+                != Terrain::Open for å tegne vegger og utganger likt
+                == Terrain::Wall for å lage uendelig lang utgang (ganske kult)
+             */
+            if tuple.1 == Terrain::Wall {
+                return tuple
+            }
+        }
+        (self.last().unwrap().0, Terrain::Wall)
     }
 }

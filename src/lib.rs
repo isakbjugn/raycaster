@@ -32,16 +32,16 @@ fn get_colors() -> u16 {
     unsafe { *DRAW_COLORS }
 }
 
-fn text(text: &str, x: i32, y: i32) {
-    unsafe { extern_text(text.as_ptr(), text.len(), x, y) }
-}
-
 // extern functions linking to the wasm runtime
 extern "C" {
     fn vline(x: i32, y: i32, len: u32);
     fn rect(x: i32, y: i32, width: u32, height: u32);
     #[link_name = "textUtf8"]
     fn extern_text(text: *const u8, length: usize, x: i32, y: i32);
+}
+
+fn text(text: &str, x: i32, y: i32) {
+    unsafe { extern_text(text.as_ptr(), text.len(), x, y) }
 }
 
 fn extract_colors() -> (u16, u16) {
@@ -69,8 +69,8 @@ fn dashed_vline(x: i32, y: i32, len: u32) {
 }
 
 #[panic_handler]
-fn phandler(_: &PanicInfo<'_>) -> ! {
-    wasm32::unreachable();
+fn panic_handler(panic_info: &PanicInfo<'_>) -> ! {
+    unsafe { wasm32::unreachable() }
 }
 
 // Køyrer ved oppstart
@@ -101,17 +101,44 @@ unsafe fn update() {
     set_colors(0x41);
     match STATE.view {
         View::FirstPerson => text("Finn vegen ut!", 25, 10),
-        View::Finished => text("Du klarte det!", 25, 10),
+        View::Victory => {
+            text("Du klarte det!", 25, 10);
+        }
     }
 
     // let mut buffer = ryu::Buffer::new();
     // text(buffer.format(STATE.player_z), 30, 25);
+    for (x, terrains) in STATE.get_terrains().iter().enumerate() {
+        for direction in terrains.iter().filter(|terrain| terrain.1 != Terrain::Wall) {
+            let (height, terrain) = direction;
+            let scaling_factor = *height as f32 / SCREEN_SIZE as f32;
+            let wall_top = 80 - (height / 2) + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
+            let horison = 80 + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
+
+            match terrain {
+                Terrain::Wall => {
+                    vline(x as i32, wall_top, *height as u32);
+                },
+                Terrain::Doorway => {
+                    set_colors(0x24);
+                    dashed_vline(x as i32, wall_top, *height as u32);
+                },
+                Terrain::Mirage => {
+                    set_colors(0x24);
+                    dashed_vline(x as i32, wall_top, *height as u32);
+                },
+                Terrain::Freeze => panic!("Terrain::Freeze is not an obstacle!"),
+                Terrain::Open => panic!("Wall should never have Terrain::Open"),
+            }
+        }
+    }
 
     // Gå gjennom kvar kolonne på skjermen og teikn ein vegg ut frå sentrum
     for (x, wall) in STATE.get_view().iter().enumerate() {
         let (height, terrain, orientation) = wall;
         let scaling_factor = *height as f32 / SCREEN_SIZE as f32;
         let wall_top = 80 - (height / 2) + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
+        let horison = 80 + floorf(STATE.player_z * 80.0 * scaling_factor) as i32;
 
         match terrain {
             Terrain::Wall => {
@@ -125,7 +152,12 @@ unsafe fn update() {
                 set_colors(0x24);
                 dashed_vline(x as i32, wall_top, *height as u32);
             },
-            Terrain::Open => panic!("Wall should never have Terrain::Open")
+            Terrain::Mirage => {
+                set_colors(0x24);
+                dashed_vline(x as i32, wall_top, *height as u32);
+            },
+            Terrain::Freeze => panic!("Terrain::Freeze is not an obstacle!"),
+            Terrain::Open => panic!("Wall should never have Terrain::Open"),
         }
     }
 }
