@@ -71,8 +71,8 @@ fn dashed_vline(x: i32, y: i32, len: u32) {
 }
 
 #[panic_handler]
-fn panic_handler(_: &PanicInfo<'_>) -> ! {
-    wasm32::unreachable();
+fn panic_handler(panic_info: &PanicInfo<'_>) -> ! {
+    unsafe { wasm32::unreachable() }
 }
 
 // Køyrer ved oppstart
