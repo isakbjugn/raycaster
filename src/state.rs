@@ -14,12 +14,12 @@ const WALL_HEIGHT: f32 = 100.0; // Eit magisk tal?
 
 pub enum View {
     FirstPerson,
-    Finished,
+    Victory,
+    Fooled,
 }
 
 pub struct State {
-    #[cfg(feature = "save")]
-    pub game_over: bool,
+    pub game_won: bool,
     pub view: View,
     pub player_x: f32,
     pub player_y: f32,
@@ -50,7 +50,11 @@ impl State {
         self.player_angle += self.player_angular_velocity;
 
         match read_map(self.player_x, self.player_y) {
-            Terrain::Open => {},
+            Terrain::Open => {
+                if !self.game_won {
+                    self.view = View::FirstPerson;
+                }
+            },
             Terrain::Wall => {
                 if read_map(self.player_x, previous_position.1) == Terrain::Open {
                     self.player_y = previous_position.1;
@@ -61,7 +65,14 @@ impl State {
                     self.player_y = previous_position.1;
                 }
             },
-            Terrain::Doorway => self.view = View::Finished,
+            Terrain::Doorway => {
+                self.view = View::Victory;
+                self.player_x = previous_position.0;
+                self.player_y = previous_position.1;
+            },
+            Terrain::Mirage => {
+                self.view = View::Fooled;
+            },
         }
 
         if jump && self.player_z == 0.0 {
@@ -115,8 +126,11 @@ impl State {
 
             // Lykkja stoggar når strålen kjem til ein vegg
             terrain = read_map(current_x, current_y);
+            if terrain == Terrain::Wall {
+                return (distance(next_x, next_y), Terrain::Wall);
+            }
             if terrain != Terrain::Open {
-                break;
+                return (100.0, Terrain::Wall);
             }
 
             // forleng strålen så lenge me ikkje har nådd ein vegg
@@ -125,7 +139,7 @@ impl State {
         }
 
         // gje tilbake avstanden fra (next_x, next_y) til spelarens posisjon
-        (distance(next_x, next_y), terrain)
+        (distance(next_x, next_y), Terrain::Wall)
     }
 
     /// Gjev tilbake næraste vegg som ei stråle skjer langsetter ei vertikal linje
@@ -162,8 +176,11 @@ impl State {
 
             // Lykkja stoggar når strålen kjem til ein vegg
             terrain = read_map(current_x, current_y);
+            if terrain == Terrain::Wall {
+                return (distance(next_x, next_y), Terrain::Wall);
+            }
             if terrain != Terrain::Open {
-                break;
+                return (100.0, Terrain::Wall);
             }
 
             // forleng strålen så lenge me ikkje har nådd ein vegg
@@ -172,7 +189,7 @@ impl State {
         }
 
         // gje tilbake avstanden fra (next_x, next_y) til spelarens posisjon
-        (distance(next_x, next_y), terrain)
+        (distance(next_x, next_y), Terrain::Wall)
     }
 
     /// Gjev 160 vegghøgder og deira farge frå spelarens perspektiv
