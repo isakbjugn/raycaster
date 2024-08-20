@@ -81,7 +81,7 @@ fn start() {
     unsafe {
         #[cfg(feature = "save")]
         {
-            let game_state_string = "game_over=false".as_bytes();
+            let game_state_string = "begynt".as_bytes();
             diskw(game_state_string.as_ptr(), core::mem::size_of::<i32>() as u32);
         }
         *PALETTE = [0x2B2D24, 0x606751, 0x949C81, 0x3E74BC];
@@ -108,15 +108,16 @@ unsafe fn update() {
     set_colors(0x41);
     match STATE.view {
         View::FirstPerson => text("Finn vegen ut!", 25, 10),
-        View::Finished => {
+        View::Victory => {
             text("Du klarte det!", 25, 10);
             #[cfg(feature = "save")]
-            if !STATE.game_over {
-                let game_state_string = "kvekksann!".as_bytes();
+            if !STATE.game_won {
+                let game_state_string = "vunnet".as_bytes();
                 diskw(game_state_string.as_ptr(), core::mem::size_of::<i32>() as u32);
-                STATE.game_over = true;
             }
+            STATE.game_won = true;
         },
+        View::Fooled => (),
     }
 
     // let mut buffer = ryu::Buffer::new();
@@ -140,14 +141,23 @@ unsafe fn update() {
                 set_colors(0x24);
                 dashed_vline(x as i32, wall_top, *height as u32);
             },
-            Terrain::Open => panic!("Wall should never have Terrain::Open")
+            Terrain::Mirage => {
+                set_colors(0x24);
+                dashed_vline(x as i32, wall_top, *height as u32);
+            },
+            Terrain::Open => panic!("Wall should never have Terrain::Open"),
         }
+    }
+
+    set_colors(0x21);
+    match STATE.view {
+        View::Fooled => text("Lureutgang!", 30, 50  ),
+        _ => (),
     }
 }
 
 static mut STATE: State = State {
-    #[cfg(feature = "save")]
-    game_over: false,
+    game_won: false,
     view: View::FirstPerson,
     player_x: 1.5,
     player_y: 1.5,
