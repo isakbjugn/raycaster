@@ -32,10 +32,6 @@ fn get_colors() -> u16 {
     unsafe { *DRAW_COLORS }
 }
 
-fn text(text: &str, x: i32, y: i32) {
-    unsafe { extern_text(text.as_ptr(), text.len(), x, y) }
-}
-
 // extern functions linking to the wasm runtime
 extern "C" {
     fn vline(x: i32, y: i32, len: u32);
@@ -44,6 +40,10 @@ extern "C" {
     fn extern_text(text: *const u8, length: usize, x: i32, y: i32);
     #[cfg(feature = "save")]
     fn diskw(dest_ptr: *const u8, size: u32);
+}
+
+fn text(text: &str, x: i32, y: i32) {
+    unsafe { extern_text(text.as_ptr(), text.len(), x, y) }
 }
 
 fn extract_colors() -> (u16, u16) {
@@ -71,7 +71,7 @@ fn dashed_vline(x: i32, y: i32, len: u32) {
 }
 
 #[panic_handler]
-fn phandler(_: &PanicInfo<'_>) -> ! {
+fn panic_handler(_: &PanicInfo<'_>) -> ! {
     wasm32::unreachable();
 }
 

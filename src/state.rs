@@ -112,7 +112,7 @@ impl State {
         // next_x og next_y held styr på kor langt strålen er frå spelaren
         let mut next_x = first_x;
         let mut next_y = first_y;
-        let mut terrain = Terrain::Open;
+        let mut terrain: Terrain;
 
         // Lykkje kor strålen forlengast til han når ein vegg
         for _ in 0..256 {
@@ -162,7 +162,7 @@ impl State {
         // next_x og next_y held styr på kor langt strålen er frå spelaren
         let mut next_x = first_x;
         let mut next_y = first_y;
-        let mut terrain = Terrain::Open;
+        let mut terrain: Terrain;
 
         // Lykkje kor strålen forlengast til han når ein vegg
         for _ in 0..256 {
