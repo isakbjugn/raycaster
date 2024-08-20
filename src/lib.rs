@@ -42,6 +42,7 @@ extern "C" {
     fn rect(x: i32, y: i32, width: u32, height: u32);
     #[link_name = "textUtf8"]
     fn extern_text(text: *const u8, length: usize, x: i32, y: i32);
+    fn diskw(dest_ptr: *const u8, size: u32);
 }
 
 fn extract_colors() -> (u16, u16) {
@@ -77,6 +78,8 @@ fn phandler(_: &PanicInfo<'_>) -> ! {
 #[no_mangle]
 fn start() {
     unsafe {
+        let game_state_string = "game_over=false".as_bytes();
+        diskw(game_state_string.as_ptr(), core::mem::size_of::<i32>() as u32);
         *PALETTE = [0x2B2D24, 0x606751, 0x949C81, 0x3E74BC];
     }
 }
@@ -101,7 +104,14 @@ unsafe fn update() {
     set_colors(0x41);
     match STATE.view {
         View::FirstPerson => text("Finn vegen ut!", 25, 10),
-        View::Finished => text("Du klarte det!", 25, 10),
+        View::Finished => {
+            text("Du klarte det!", 25, 10);
+            if !STATE.game_over {
+                let game_state_string = "kvekksann!".as_bytes();
+                diskw(game_state_string.as_ptr(), core::mem::size_of::<i32>() as u32);
+                STATE.game_over = true;
+            }
+        },
     }
 
     // let mut buffer = ryu::Buffer::new();
@@ -131,6 +141,7 @@ unsafe fn update() {
 }
 
 static mut STATE: State = State {
+    game_over: false,
     view: View::FirstPerson,
     player_x: 1.5,
     player_y: 1.5,
