@@ -18,6 +18,7 @@ pub enum View {
 }
 
 pub struct State {
+    #[cfg(feature = "save")]
     pub game_over: bool,
     pub view: View,
     pub player_x: f32,
