@@ -1,16 +1,16 @@
 build:
 	cargo build --release
-	cp target/wasm32-unknown-unknown/release/raycaster.wasm .
-	wasm-snip --snip-rust-fmt-code --snip-rust-panicking-code raycaster.wasm -o raycaster.wasm
 
 build-web:
 	cargo build --release --features save
-	cp target/wasm32-unknown-unknown/release/raycaster.wasm .
-	wasm-snip --snip-rust-fmt-code --snip-rust-panicking-code raycaster.wasm -o raycaster.wasm
 
 bundle:
 	cp target/wasm32-unknown-unknown/release/raycaster.wasm .
 	wasm-snip --snip-rust-fmt-code --snip-rust-panicking-code raycaster.wasm -o raycaster.wasm
+
+html:
+	rm -f labyrint.html
+	w4 bundle raycaster.wasm --title "Labyrint" --html labyrint.html
 
 size:
 	du -bh ./target/wasm32-unknown-unknown/release/raycaster.wasm
