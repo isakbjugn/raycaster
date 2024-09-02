@@ -107,9 +107,9 @@ unsafe fn update() {
 
     set_colors(0x41);
     match STATE.view {
-        View::FirstPerson => text("Finn vegen ut!", 25, 10),
+        View::FirstPerson => text("Find the way out!", 15, 10),
         View::Victory => {
-            text("Du klarte det!", 25, 10);
+            text("You made it!", 30, 10);
             #[cfg(feature = "save")]
             if !STATE.game_won {
                 let game_state_string = "vunnet".as_bytes();
@@ -151,7 +151,7 @@ unsafe fn update() {
 
     set_colors(0x21);
     match STATE.view {
-        View::Fooled => text("Lureutgang!", 30, 50  ),
+        View::Fooled => text("Trick exit!", 35, 50),
         _ => (),
     }
 }
